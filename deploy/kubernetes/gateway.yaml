@@ -1,0 +1,84 @@
+# Replace the image and provision audio-pipeline-env Secret privately before applying.
+# HTTP/PCM cell reference; it intentionally does NOT expose generic WebRTC/UDP or PBX ports.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audio-gateway
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: audio-gateway}}
+  template:
+    metadata: {labels: {app: audio-gateway}}
+    spec:
+      terminationGracePeriodSeconds: 60
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000}
+      containers:
+        - name: gateway
+          image: YOUR_REGISTRY/audio-pipeline:REVIEWED_DIGEST
+          ports: [{containerPort: 8000}]
+          envFrom: [{secretRef: {name: audio-pipeline-env}}]
+          env:
+            - {name: RTC_ENABLED, value: "false"}
+            - {name: OUTBOUND_ENABLED, value: "false"}
+            - {name: AUDIOSOCKET_ENABLED, value: "false"}
+            - {name: STATE_BACKEND, value: redis}
+            - {name: DRAIN_SECONDS, value: "30"}
+            - name: WORKER_ID
+              valueFrom: {fieldRef: {fieldPath: metadata.uid}}
+          resources:
+            requests: {cpu: "1", memory: 512Mi}
+            limits: {cpu: "2", memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8000}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8000}
+            periodSeconds: 15
+          startupProbe:
+            httpGet: {path: /healthz, port: 8000}
+            failureThreshold: 60
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec: {command: [python, -m, scripts.drain]}
+          volumeMounts:
+            - {name: models, mountPath: /app/models, readOnly: true}
+            - {name: temporary, mountPath: /tmp}
+      volumes:
+        - {name: models, persistentVolumeClaim: {claimName: audio-models}}
+        - {name: temporary, emptyDir: {sizeLimit: 64Mi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: audio-gateway}
+spec:
+  selector: {app: audio-gateway}
+  ports: [{port: 8000, targetPort: 8000}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: audio-gateway}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: audio-gateway}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: audio-gateway}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: audio-gateway}
+  minReplicas: 2
+  maxReplicas: 20
+  behavior:
+    scaleDown: {stabilizationWindowSeconds: 300}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 60}
+# CPU HPA is only a bootstrap. Add active-call/loop-lag SLO-based external metrics before fleet use.

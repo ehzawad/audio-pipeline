@@ -1,0 +1,10 @@
+:8080 {
+    reverse_proxy gateway-a:8000 gateway-b:8000 {
+        lb_policy round_robin
+        health_uri /readyz
+        health_interval 3s
+        health_timeout 2s
+        flush_interval -1
+    }
+    # Deliberately no access log: it must never record grant headers or query secrets.
+}

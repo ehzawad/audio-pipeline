@@ -1,0 +1,59 @@
+# Run: docker compose --env-file .env -f deploy/compose.cell.yaml up --build
+# Two HTTP/PCM gateways, one shared control store. Not an HA Redis deployment.
+x-gateway: &gateway
+  build: ..
+  init: true
+  env_file: ../.env
+  environment: &environment
+    STATE_BACKEND: redis
+    REDIS_URL: redis://redis:6379/0
+    CELL_ID: ${CELL_ID:-local-cell}
+    SIGNING_KEY: ${SIGNING_KEY:?Set a random shared SIGNING_KEY of at least 32 characters}
+    IDENTITY_SECRET: ${IDENTITY_SECRET:?Set a distinct IDENTITY_SECRET of at least 32 characters}
+    APP_TOKEN: ${APP_TOKEN:?Set a distinct operator APP_TOKEN}
+    PUBLIC_BASE_URL: http://localhost:8080
+    ALLOWED_ORIGINS: http://localhost:8080
+    RTC_ENABLED: "false"
+    OUTBOUND_ENABLED: "false"
+    AUDIOSOCKET_ENABLED: "false"
+    DRAIN_SECONDS: "30"
+  volumes:
+    - ../models:/app/models:ro
+  expose: ["8000"]
+  depends_on:
+    redis:
+      condition: service_healthy
+  stop_grace_period: 50s
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz')"]
+    interval: 3s
+    timeout: 2s
+    retries: 2
+services:
+  gateway-a:
+    <<: *gateway
+    environment:
+      <<: *environment
+      WORKER_ID: gateway-a
+  gateway-b:
+    <<: *gateway
+    environment:
+      <<: *environment
+      WORKER_ID: gateway-b
+  redis:
+    image: redis:8.2.9-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes: ["control:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+    # No public Redis port. Production needs private ACL/TLS and a tested persistence policy.
+  edge:
+    image: caddy:2-alpine
+    ports: ["127.0.0.1:8080:8080"]
+    volumes: ["./Caddyfile.cell:/etc/caddy/Caddyfile:ro"]
+    depends_on: [gateway-a, gateway-b]
+volumes:
+  control:

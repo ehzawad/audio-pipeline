@@ -1,0 +1,8 @@
+# Run Caddy on the SAME host as the loopback-bound gateway.
+# Set VOICE_HOST to your DNS name. PUBLIC_BASE_URL must match https://VOICE_HOST.
+{$VOICE_HOST} {
+    request_body {
+        max_size 100KB
+    }
+    reverse_proxy 127.0.0.1:8000
+}

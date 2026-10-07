@@ -1,0 +1,9 @@
+# Provenance and distribution boundary
+
+The user supplied `voicebot.zip`, `README(1).md`, and `Real-Time Voice Agents The Mental-Model Book.md`. This implementation uses that work as its starting point. Audio primitives and sentence-chunking logic in `duplex_voice/audio.py` and `duplex_voice/text.py` are adapted from the supplied repository; the core, service boundaries, playback ledger, security, routes, browser client, tests, and companion narrative were rewritten or extended for this delivery. The original repository's licensing was not established from the upload. No new blanket license is asserted over the user's pre-existing work. Review ownership and choose a distribution license before public redistribution.
+
+Model weights are NOT included. Their licenses are independent of the application: consult the exact HF model cards and retained revision manifest. The Silero HF repository selected by the download script is a community mirror claiming the official streaming model, not a repository operated by the Silero authors. The Unsloth GGUF option is a community quantization of the Qwen checkpoint, not an original Qwen release.
+
+`duplex_voice/assets/service-unavailable.ulaw.xz` was generated for this project with the eSpeak system synthesizer's `en-us` voice, at speed 165, attenuated, and subsequently converted to 8 kHz G.711 mu-law and losslessly XZ-packed for this release. This narrowband encoding applies only to the emergency prompt; normal Kokoro output remains 24 kHz. It is a generic machine-generated failure announcement, not a cloned person's voice. No eSpeak binary is redistributed. No trained-model performance is inferred from this prompt.
+
+No font binaries, user recordings, account credentials, or phone numbers are included. The example telephone destinations are reserved/example-style placeholders; do not dial arbitrary destinations.

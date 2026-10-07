@@ -1,0 +1,24 @@
+{
+  "scope": "planning assumptions only; constant duration and peak arrival multiplier",
+  "sessions_per_day": 1000000,
+  "average_new_sessions_per_second": 11.574074074074074,
+  "average_active_sessions": 2083.3333333333335,
+  "peak_active_sessions": 6250.0,
+  "assumed_calls_per_gateway_at_slo": 100.0,
+  "gateway_replicas_before_failure_reserve": 105,
+  "peak_duplex_packets_per_second_at_20ms": 625000.0,
+  "peak_lease_renewals_per_second": 2083.3333333333335,
+  "redis_script_calls_per_second_for_renewals_only": 4166.666666666667,
+  "raw_pcm_duplex_megabits_per_second": 4000.0,
+  "phone_mulaw_duplex_megabits_per_second_before_base64": 800.0,
+  "excluded": [
+    "model compute",
+    "checkpoints",
+    "signaling",
+    "TLS/JSON/base64 overhead",
+    "regional skew",
+    "failure spare capacity",
+    "burst distribution",
+    "provider quotas"
+  ]
+}

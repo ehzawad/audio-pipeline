@@ -1,0 +1,35 @@
+# Overlay on compose.yaml; download the model files first. CPU reference only.
+services:
+  gateway:
+    environment:
+      VOICE_MODE: local
+      ASR_BASE_URL: http://asr:8001
+      TTS_BASE_URL: http://tts:8001
+      LLM_BASE_URL: ${LLM_BASE_URL:?Set a private external LLM URL reachable from the container}
+    depends_on:
+      asr: {condition: service_healthy}
+      tts: {condition: service_healthy}
+  asr:
+    build: {context: ., dockerfile: deploy/Dockerfile.speech}
+    init: true
+    env_file: .env
+    environment: {SPEECH_ROLE: asr}
+    volumes: ["./models:/app/models:ro"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz')"]
+      interval: 15s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 60s
+  tts:
+    build: {context: ., dockerfile: deploy/Dockerfile.speech}
+    init: true
+    env_file: .env
+    environment: {SPEECH_ROLE: tts, TTS_DEVICE: cpu}
+    volumes: ["./models:/app/models:ro"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/readyz')"]
+      interval: 15s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 60s
