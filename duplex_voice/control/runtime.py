@@ -8,6 +8,7 @@ from contextlib import suppress
 from .backend import Expired
 from .service import StopRequested
 from ..session import VoiceSession
+from ..live import LiveSession
 from ..concurrency import Overloaded
 
 
@@ -128,7 +129,8 @@ class OwnedCall:
             async with asyncio.timeout(rt.settings.control_timeout):
                 history = await rt.control.backend.history(doc['tenant'], doc['sid']) if rt.control.persist_history else []
             self.guard.check()
-            session = VoiceSession(GuardedTransport(transport, self.guard, prepared),
+            make = LiveSession if rt.settings.voice_mode == 'live' else VoiceSession
+            session = make(GuardedTransport(transport, self.guard, prepared),
                 rt.providers, rt.settings, rt.metrics, history=history,
                 history_revision=doc['history_revision'], on_history=snapshot)
             await session.run()

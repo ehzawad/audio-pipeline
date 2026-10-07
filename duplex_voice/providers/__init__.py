@@ -1,6 +1,6 @@
 from __future__ import annotations
 import httpx
-from .clients import (CompatibleLLM, RemoteASR, RemoteTTS, DeepgramASR, ElevenLabsTTS,
+from .clients import (CompatibleLLM, ResponsesLLM, RemoteASR, RemoteTTS, DeepgramASR, ElevenLabsTTS,
                       OpenAIRealtimeASR, OpenAITTS, DemoASR, DemoLLM, DemoTTS)
 from ..vad import SileroFactory, EnergyVAD
 from ..resilience import Circuit, GuardedASR, GuardedLLM, GuardedTTS, HedgedTTS
@@ -13,10 +13,12 @@ class Providers:
         self.silero = None
         if s.voice_mode == "demo":
             self.asr, self.llm, self.tts = DemoASR(), DemoLLM(), DemoTTS()
+        elif s.voice_mode == "live":
+            self.asr = self.llm = self.tts = None  # one GPT-Live session per call instead
         else:
             self.asr = {"speech": RemoteASR, "deepgram": DeepgramASR,
                         "openai": OpenAIRealtimeASR}[s.asr_provider](s)
-            self.llm = CompatibleLLM(s, self.client)
+            self.llm = (ResponsesLLM if s.llm_api == "responses" else CompatibleLLM)(s, self.client)
             self.tts = {"speech": RemoteTTS, "elevenlabs": ElevenLabsTTS,
                         "openai": OpenAITTS}[s.tts_provider](s, self.client)
             self.asr = GuardedASR(self.asr, Circuit(s.asr_concurrency, s.breaker_failures, s.breaker_reset_seconds))

@@ -27,7 +27,18 @@ async def run(args):
                 p=path.parent/file['file']
                 if not p.is_file() or sha256(p)!=file['sha256']:errors.append(f'bad hash: {p}')
         print('Model manifest verified' if not errors else 'Check errors below')
-    if args.probe and s.voice_mode!='demo':
+    openai_models=[m for m in ([s.live_model,s.live_delegate_model] if s.voice_mode=='live' else
+        [s.openai_asr_model]*(s.asr_provider=='openai')+[s.openai_tts_model]*(s.tts_provider=='openai')) if m]
+    if args.probe and openai_models:
+        async with httpx.AsyncClient(timeout=10) as c:
+            try:
+                r=await c.get(s.openai_base_url.rstrip('/')+'/models',headers={'Authorization':'Bearer '+s.openai_api_key})
+                r.raise_for_status();ids={m['id'] for m in r.json().get('data',[])}
+                for m in openai_models:
+                    print(f'OpenAI model {m}: {"listed" if m in ids else "NOT LISTED"}')
+                    if m not in ids:errors.append(f'OpenAI model not available to this key: {m}')
+            except Exception as e:errors.append(f'probe failed: OpenAI models: {type(e).__name__}')
+    if args.probe and s.voice_mode not in ('demo','live'):
         async with httpx.AsyncClient(timeout=5) as c:
             urls=[]
             if s.asr_provider=='speech':urls.append(((s.asr_base_url or s.speech_base_url)+'/readyz',s.speech_token))

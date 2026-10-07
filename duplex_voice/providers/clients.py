@@ -75,6 +75,42 @@ class CompatibleLLM:
                         yield content
 
 
+class ResponsesLLM:
+    """OpenAI Responses API streaming; store=false keeps no server-side conversation.
+
+    Only output text deltas are spoken. A tool call or a failed/errored response ends
+    the turn explicitly, exactly as the Chat Completions adapter does.
+    """
+    def __init__(self, settings, client: httpx.AsyncClient):
+        self.s, self.client = settings, client
+
+    async def stream(self, messages, system):
+        s = self.s
+        payload = {"model": s.llm_model, "stream": True, "store": False, "instructions": system,
+                   "input": [{"role": m["role"], "content": m["content"]} for m in messages],
+                   "max_output_tokens": s.llm_max_tokens}
+        if s.llm_send_temperature:
+            payload["temperature"] = s.llm_temperature
+        if s.llm_reasoning_effort:
+            payload["reasoning"] = {"effort": s.llm_reasoning_effort}
+        headers = {"Authorization": f"Bearer {s.llm_api_key}"} if s.llm_api_key else {}
+        async with self.client.stream("POST", s.llm_base_url.rstrip("/") + "/responses",
+                                      headers=headers, json=payload) as response:
+            response.raise_for_status()
+            async for event in sse_objects(response):
+                kind = event.get("type", "")
+                if kind == "response.output_text.delta":
+                    delta = event.get("delta")
+                    if isinstance(delta, str) and delta:
+                        yield delta
+                elif kind in {"error", "response.failed"}:
+                    raise RuntimeError("LLM stream reported an error")
+                elif kind == "response.output_item.added" and event.get("item", {}).get("type") != "message":
+                    raise RuntimeError("This speech profile has no authorized tool executor")
+                elif kind in {"response.completed", "response.incomplete"}:
+                    return
+
+
 class RemoteASR:
     def __init__(self, settings):
         self.s = settings
@@ -181,6 +217,17 @@ class OpenAIRealtimeASR:
         if not settings.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required")
 
+    def transcription(self):
+        # Current models take `languages` and `delay`; the gpt-4o-* family rejects
+        # `languages` (observed) and keeps the older single `language` field.
+        model = self.s.openai_asr_model
+        if model.startswith(("gpt-4o-", "whisper")):
+            return {"model": model, "language": "en"}
+        config = {"model": model, "languages": ["en"]}
+        if self.s.openai_asr_delay:
+            config["delay"] = self.s.openai_asr_delay
+        return config
+
     async def recognize(self, audio, on_partial):
         # close_timeout=0: once the committed final is ours, the provider's close reply
         # (observed at ~2 s) must not delay the turn. We send close, then drop the socket.
@@ -190,7 +237,7 @@ class OpenAIRealtimeASR:
             await ws.send(json.dumps({"type": "session.update", "session": {
                 "type": "transcription", "audio": {"input": {
                     "format": {"type": "audio/pcm", "rate": self.rate},
-                    "transcription": {"model": self.s.openai_asr_model, "language": "en"},
+                    "transcription": self.transcription(),
                     "turn_detection": None}}}}))
 
             async def append(samples):
