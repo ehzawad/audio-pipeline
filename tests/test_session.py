@@ -131,3 +131,57 @@ async def test_one_assistant_commit_per_epoch():
     await s.speak(text_stream('Keep this phrase once.'),None,Trace())
     s.commit_assistant();s.commit_assistant(interrupted=True)
     assert len(s.history)==2
+
+
+class PhraseTTS:
+    """Each phrase: `delay` before the first chunk, then 10 x 20 ms; records start/close."""
+    sample_rate=24000
+    def __init__(self,delay=0.,fail=(),stall=()):
+        self.delay,self.fail,self.stall=delay,fail,stall;self.started=[];self.closed=[]
+    async def synthesize(self,text):
+        self.started.append((text,asyncio.get_running_loop().time()))
+        try:
+            await asyncio.sleep(self.delay)
+            if text in self.fail: raise RuntimeError('provider failed this phrase')
+            for i in range(10):
+                yield np.ones(480,np.float32)*.1
+                if text in self.stall and i==2: await asyncio.sleep(30)
+        finally: self.closed.append(text)
+
+
+def largest_write_gap(t):
+    times=[w[3] for w in t.writes]
+    return max(b-a for a,b in zip(times,times[1:]))
+
+
+@pytest.mark.parametrize('lookahead',[0,1])
+async def test_tts_lookahead_hides_next_phrase_latency(lookahead):
+    tts=PhraseTTS(delay=.15)
+    s=make_session(p=fake_providers(tts=tts),output_queue_frames=2,tts_lookahead=lookahead)
+    await s.speak(text_stream('First phrase is here. Second phrase is here.'),None,Trace())
+    assert [x[0] for x in tts.started]==['First phrase is here.','Second phrase is here.']
+    assert len(s.t.writes)==20
+    if lookahead:
+        assert largest_write_gap(s.t)<.07   # second phrase arrived during the first
+    else:
+        assert largest_write_gap(s.t)>.09   # sequential request: its delay is audible
+
+
+async def test_prefetched_phrase_failure_waits_for_earlier_audio():
+    tts=PhraseTTS(fail={'Second phrase is here.'})
+    s=make_session(p=fake_providers(tts=tts),output_queue_frames=2)
+    s.history=[{'role':'user','content':'Question'}]
+    with pytest.raises(ExceptionGroup): await s.speak(text_stream('First phrase is here. Second phrase is here.'),None,Trace())
+    assert len(s.t.writes)==10   # every frame of the complete first phrase was dispatched
+    assert s.history[-1]['content']=='First phrase is here. [interrupted]'
+
+
+async def test_interrupt_closes_prefetched_tts_stream():
+    tts=PhraseTTS(stall={'First phrase is here.'})
+    s=make_session(p=fake_providers(tts=tts))
+    s.history=[{'role':'user','content':'Question'}]
+    s.response=s.spawn(s.speak(text_stream('First phrase is here. Second phrase is here.'),None,Trace()))
+    old=s.response
+    await wait_until(lambda:len(tts.started)==2 and len(s.t.writes)>=3)
+    await s.interrupt();await asyncio.gather(old,return_exceptions=True)
+    assert sorted(tts.closed)==['First phrase is here.','Second phrase is here.']

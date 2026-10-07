@@ -5,9 +5,12 @@ is not a provider fault. Old in-flight completions cannot close a newer circuit.
 """
 from __future__ import annotations
 import asyncio
+import logging
 import time
 from contextlib import asynccontextmanager, aclosing
 from .concurrency import Overloaded
+
+log = logging.getLogger("duplex.resilience")
 
 
 class Circuit:
@@ -76,6 +79,71 @@ class GuardedTTS:
             async with aclosing(self.inner.synthesize(text)) as stream:
                 async for chunk in stream:
                     yield chunk
+
+
+class HedgedTTS:
+    """Prebuffer each phrase and race one duplicate request when the first is slow.
+
+    Hosted TTS can stream a short head chunk and then pause, or stall for many seconds.
+    Nothing of a phrase is yielded until one attempt holds `prebuffer_s` of audio (or has
+    finished), so a losing duplicate is discarded unheard. After that point the winner
+    is streamed as is: audio that may have been heard is never requested again.
+    """
+    def __init__(self, inner, prebuffer_s=0., hedge_after_s=0.):
+        self.inner, self.sample_rate = inner, inner.sample_rate
+        self.prebuffer = max(1, int(prebuffer_s * inner.sample_rate))
+        self.hedge_after = hedge_after_s or None
+
+    async def synthesize(self, text):
+        queues, tasks, failed = [], [], set()
+        ready = asyncio.Queue()
+
+        async def attempt(i, q):
+            have, signalled = 0, False
+            try:
+                async with aclosing(self.inner.synthesize(text)) as stream:
+                    async for samples in stream:
+                        q.put_nowait(samples)
+                        have += len(samples)
+                        if not signalled and have >= self.prebuffer:
+                            signalled = True
+                            ready.put_nowait(i)
+                q.put_nowait(None)
+            except Exception as exc:
+                failed.add(i)
+                q.put_nowait(exc)
+            if not signalled:
+                ready.put_nowait(i)
+
+        def launch():
+            queues.append(asyncio.Queue())
+            tasks.append(asyncio.create_task(attempt(len(tasks), queues[-1])))
+
+        launch()
+        try:
+            while True:
+                try:
+                    async with asyncio.timeout(self.hedge_after if len(tasks) == 1 else None):
+                        winner = await ready.get()
+                except TimeoutError:
+                    log.info('{"type":"tts_hedge"}')
+                    launch()
+                    continue
+                # A failed attempt only decides the outcome when no other attempt remains.
+                if winner not in failed or all(t.done() for t in tasks):
+                    break
+            for i, task in enumerate(tasks):
+                if i != winner:
+                    task.cancel()
+            q = queues[winner]
+            while (item := await q.get()) is not None:
+                if isinstance(item, Exception):
+                    raise item
+                yield item
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 
 class RateBudget:

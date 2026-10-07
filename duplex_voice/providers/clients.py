@@ -5,13 +5,14 @@ Each ASR utterance owns its connection, so a late final cannot corrupt a later t
 """
 from __future__ import annotations
 import asyncio
+import base64
 import json
 from urllib.parse import urlencode
 import httpx
 import numpy as np
 import websockets
 
-from ..audio import PCMDecoder, float_to_pcm16
+from ..audio import PCMDecoder, Resampler, float_to_pcm16
 
 
 def ws_url(http_url: str) -> str:
@@ -56,6 +57,8 @@ class CompatibleLLM:
                    s.llm_token_parameter: s.llm_max_tokens}
         if s.llm_send_temperature:
             payload["temperature"] = s.llm_temperature
+        if s.llm_reasoning_effort:
+            payload["reasoning_effort"] = s.llm_reasoning_effort
         headers = {"Authorization": f"Bearer {s.llm_api_key}"} if s.llm_api_key else {}
         async with self.client.stream("POST", s.llm_base_url.rstrip("/") + "/chat/completions",
                                       headers=headers, json=payload) as response:
@@ -164,6 +167,68 @@ class DeepgramASR:
             return " ".join(finals).strip()
 
 
+class OpenAIRealtimeASR:
+    """One OpenAI realtime transcription session per utterance; our VAD owns endpointing.
+
+    Server turn detection is disabled, so the provider never commits on its own. The
+    single explicit commit names the only item whose transcript may become the final.
+    Streaming models emit deltas during speech; others emit them after the commit.
+    """
+    rate = 24000  # audio/pcm input is fixed at 24 kHz by this API
+
+    def __init__(self, settings):
+        self.s = settings
+        if not settings.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required")
+
+    async def recognize(self, audio, on_partial):
+        # close_timeout=0: once the committed final is ours, the provider's close reply
+        # (observed at ~2 s) must not delay the turn. We send close, then drop the socket.
+        async with websockets.connect(self.s.openai_realtime_url + "?" + urlencode({"intent": "transcription"}),
+                additional_headers={"Authorization": "Bearer " + self.s.openai_api_key},
+                open_timeout=self.s.io_timeout, close_timeout=0, max_size=262144, max_queue=64) as ws:
+            await ws.send(json.dumps({"type": "session.update", "session": {
+                "type": "transcription", "audio": {"input": {
+                    "format": {"type": "audio/pcm", "rate": self.rate},
+                    "transcription": {"model": self.s.openai_asr_model, "language": "en"},
+                    "turn_detection": None}}}}))
+
+            async def append(samples):
+                if samples.size:
+                    await ws.send(json.dumps({"type": "input_audio_buffer.append",
+                        "audio": base64.b64encode(float_to_pcm16(samples)).decode()}))
+
+            async def send():
+                rs = Resampler(16000, self.rate)
+                async for frame in audio:
+                    await append(rs.process(frame))
+                await append(rs.flush())
+                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+
+            async def receive():
+                committed, finals, partial = None, {}, ""
+                async for raw in ws:
+                    event = json.loads(raw)
+                    kind = event.get("type")
+                    if kind in {"error", "conversation.item.input_audio_transcription.failed"}:
+                        raise RuntimeError("OpenAI transcription failed")
+                    if kind == "input_audio_buffer.committed":
+                        committed = event.get("item_id")
+                    elif kind == "conversation.item.input_audio_transcription.delta":
+                        partial = (partial + str(event.get("delta", "")))[:8192]
+                        on_partial(partial.strip())
+                    elif kind == "conversation.item.input_audio_transcription.completed":
+                        finals[event.get("item_id")] = str(event.get("transcript", ""))[:8192]
+                    if committed is not None and committed in finals:
+                        return finals[committed]
+                raise RuntimeError("OpenAI closed without the committed item's transcript")
+
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(send())
+                rx = tg.create_task(receive())
+            return rx.result().strip()
+
+
 class RemoteTTS:
     sample_rate = 24000
     def __init__(self, settings, client):
@@ -202,6 +267,32 @@ class ElevenLabsTTS:
                 headers={"xi-api-key": self.s.elevenlabs_api_key},
                 json={"text": text, "model_id": self.s.elevenlabs_model}) as response:
             response.raise_for_status()
+            async for b in response.aiter_bytes():
+                out = decoder.push(b)
+                if out.size:
+                    yield out
+            decoder.finish()
+
+
+class OpenAITTS:
+    sample_rate = 24000  # response_format=pcm: signed 16-bit little-endian mono at 24 kHz
+
+    def __init__(self, settings, client):
+        self.s, self.client = settings, client
+        if not settings.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required")
+
+    async def synthesize(self, text):
+        body = {"model": self.s.openai_tts_model, "voice": self.s.openai_tts_voice,
+                "input": text, "response_format": "pcm"}
+        if self.s.openai_tts_instructions:
+            body["instructions"] = self.s.openai_tts_instructions
+        decoder = PCMDecoder()
+        async with self.client.stream("POST", self.s.openai_base_url.rstrip("/") + "/audio/speech",
+                headers={"Authorization": "Bearer " + self.s.openai_api_key}, json=body) as response:
+            response.raise_for_status()
+            if response.headers.get("content-type", "").split(";")[0].strip() != "audio/pcm":
+                raise ValueError("OpenAI speech returned an unexpected media type")
             async for b in response.aiter_bytes():
                 out = decoder.push(b)
                 if out.size:
