@@ -62,6 +62,20 @@ For independent ASR/TTS processes, set `SPEECH_ROLE=asr` and `SPEECH_ROLE=tts` o
 
 The hosted profile `.env.cloud.example` uses Deepgram and ElevenLabs plus a configurable compatible streaming LLM endpoint. Commercial services require accounts and are not represented as downloadable Hugging Face weights. No new API keys or paid phone calls were created for this release.
 
+## Hosted OpenAI profile
+
+`.env.openai.example` runs every model stage on one OpenAI account: realtime transcription (`ASR_PROVIDER=openai`), the generic streaming chat adapter pointed at `https://api.openai.com/v1`, and `/v1/audio/speech` PCM (`TTS_PROVIDER=openai`). `OPENAI_API_KEY` comes from the process environment; `LLM_API_KEY=${OPENAI_API_KEY}` is interpolated by python-dotenv, so the key is not copied into `.env`. Silero VAD stays local and owns endpointing: each utterance opens its own transcription session with server turn detection disabled and exactly one commit, and only the committed item's transcript can become the final.
+
+```sh
+uv venv --python 3.13 && uv pip install -e '.[dev,vad]'
+uv run python -m scripts.download_models --vad-only
+cp .env.openai.example .env
+uv run python -m scripts.doctor --probe
+uv run python -m scripts.probe question.wav --include-text
+```
+
+From one development host, this TTS streamed a 0.2-second head chunk and then paused, usually 0.3–0.8 s and occasionally for over ten seconds. Three opt-in policies address that, and the profile enables all three. `TTS_LOOKAHEAD` requests later phrases while the current one plays. `TTS_PREBUFFER_MS` holds a phrase until that much audio has arrived. `TTS_HEDGE_SECONDS` races one duplicate request when the first has not filled its prebuffer in time. Nothing of a phrase is played before one attempt wins, so the losing duplicate is never heard. A call can therefore hold up to `TTS_LOOKAHEAD + 1` phrase requests plus one hedge, so size `TTS_CONCURRENCY` and the provider quota accordingly. These measurements describe one network on one day. They are not a provider benchmark: see [verification](verification/README.md).
+
 ## Shared control and native-client integration
 
 For more than one gateway, install `.[cluster]`, use `STATE_BACKEND=redis`, and share the same cell, signing key, issuer configuration, and Redis endpoint. The SQLite adapter is a single-host reference/testing backend, not a horizontally distributed store. Production configuration refuses SQLite, anonymous identity, and demo models.
@@ -84,8 +98,8 @@ The application's authenticated backend issues a short-lived JWT scoped to `tena
 | JavaScript | HTTP control client, PCM socket driver, strict parser and playback cursor | Renderer callback must represent actual render completion, not packet arrival |
 | Swift | Swift package with actor-isolated HTTP control, WebSocket task creation, packet/receipt core | AVAudioEngine/voice-processing audio session and UI remain app-specific |
 | Kotlin | JVM/Android-compatible PCM parser and playback cursor | AudioRecord/AudioTrack and HTTP/WebSocket driver remain app-specific |
-| Twilio | Signed webhook + signed media upgrade + call-bound grant, marks and clear | Real phone/account/region tests required |
-| Asterisk | Private-network AudioSocket, paced PCM and DTMF input | Existing PBX/trunk/SBC owns SIP, RTP, TLS/SRTP and carrier integration |
+| Twilio | Signed webhook + signed media upgrade + call-bound grant, marks and clear; a local protocol emulator for Asterisk calls | Emulated, not Twilio: real phone/account/region tests required |
+| Asterisk | Private-network AudioSocket, paced PCM and DTMF input; a loopback SIP/RTP lab and synthetic caller | Existing PBX/trunk/SBC owns SIP, RTP, TLS/SRTP and carrier integration |
 
 See [client protocol](docs/PROTOCOLS.md). Mobile code is an integration core, not a finished iOS/Android call UI.
 
@@ -117,6 +131,9 @@ swift test --package-path clients/swift
 python -m scripts.check_clients  # also requires kotlinc and a JRE
 # Real Redis tests require a DISPOSABLE local test server; never use a production database.
 TEST_REDIS_URL=redis://127.0.0.1:6379/0 python -m pytest tests/test_redis_integration.py -q
+# Synthetic phone calls (real models; see deploy/asterisk/README.md and verification/):
+uv run python -m scripts.pbx_lab                                   # AudioSocket route (7001)
+uv run python -m scripts.pbx_lab --channel PJSIP/7002@voicebot-loop  # Twilio route via scripts.twilio_emulator
 # Cross-gateway synthetic traffic; configure both gateways with the same control state:
 python -m scripts.load_ws --url http://127.0.0.1:8010 \
   --media-url http://127.0.0.1:8011 --calls 32

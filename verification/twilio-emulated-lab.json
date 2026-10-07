@@ -1,0 +1,224 @@
+{
+  "scope": "Three synthetic calls into the gateway's Twilio route through a local Twilio protocol emulator. Not Twilio: no PSTN, Twilio network or Twilio-issued signature. Smoke evidence, not an SLO.",
+  "executed": "2026-10-07",
+  "path": "synthetic caller AudioSocket -> Asterisk PJSIP/7002@voicebot-loop (G.711 RTP on 127.0.0.1) -> Asterisk -> AudioSocket 127.0.0.1:9094 -> scripts.twilio_emulator -> signed POST /twilio/voice + signed Media Streams WebSocket /twilio/stream -> gateway -> OpenAI",
+  "evidence": "audio received by the caller's AudioSocket; gateway playback ledger fed by emulator marks echoed at emulated playout",
+  "gateway": {
+    "TWILIO_ENABLED": true,
+    "TWILIO_VALIDATE": true,
+    "credentials": "lab-only generated values, not a Twilio account"
+  },
+  "configuration": {
+    "OPENAI_ASR_MODEL": "gpt-live-transcribe",
+    "LLM_MODEL": "gpt-5.2 (reasoning_effort none)",
+    "OPENAI_TTS_MODEL": "gpt-4o-mini-tts",
+    "OPENAI_TTS_VOICE": "cedar",
+    "TTS_LOOKAHEAD": 1,
+    "TTS_PREBUFFER_MS": 400,
+    "TTS_HEDGE_SECONDS": 2.5,
+    "VAD_END_MS_PHONE": 640,
+    "caller_voice": "marin"
+  },
+  "summary": {
+    "calls": 3,
+    "calls_without_failures": 3,
+    "answered_turns": 9,
+    "caller_end_to_heard_reply_s": {
+      "min": 3.678,
+      "median": 4.393,
+      "max": 6.871
+    },
+    "assistant_stop_after_barge_s": [
+      0.52,
+      0.58,
+      0.641
+    ],
+    "largest_gap_inside_a_reply_s": 0.44,
+    "sessions_active_after_each_call": [
+      0,
+      0,
+      0
+    ],
+    "emulator": [
+      {
+        "type": "emulated_call",
+        "media_in": 2376,
+        "media_out": 615,
+        "marks_echoed": 125,
+        "clears": 1,
+        "dtmf": 0,
+        "seconds": 47.53
+      },
+      {
+        "type": "emulated_call",
+        "media_in": 2096,
+        "media_out": 525,
+        "marks_echoed": 108,
+        "clears": 1,
+        "dtmf": 0,
+        "seconds": 41.93
+      },
+      {
+        "type": "emulated_call",
+        "media_in": 2137,
+        "media_out": 580,
+        "marks_echoed": 120,
+        "clears": 1,
+        "dtmf": 0,
+        "seconds": 42.76
+      }
+    ]
+  },
+  "calls": [
+    {
+      "run_id": "20261007T105342Z",
+      "channel": "PJSIP/7002@voicebot-loop",
+      "call_seconds": 47.526,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 1.413,
+        "end_s": 5.733
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 11.39,
+          "reply_onset_s": 16.192,
+          "said_end_to_heard_reply_s": 4.802,
+          "reply_transcript": "Paris started as a small settlement"
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 17.693,
+          "assistant_stop_after_barge_s": 0.52,
+          "said_end_s": 21.793,
+          "reply_onset_s": 26.873,
+          "said_end_to_heard_reply_s": 5.08,
+          "reply_end_s": 29.412,
+          "reply_gaps_s": [
+            0.4
+          ],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 36.021,
+          "reply_onset_s": 42.892,
+          "said_end_to_heard_reply_s": 6.871,
+          "reply_end_s": 45.013,
+          "reply_gaps_s": [
+            0.44
+          ],
+          "reply_transcript": "Goodbye, and have a good day."
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    },
+    {
+      "run_id": "20261007T105442Z",
+      "channel": "PJSIP/7002@voicebot-loop",
+      "call_seconds": 41.928,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 2.268,
+        "end_s": 6.668
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 12.33,
+          "reply_onset_s": 17.128,
+          "said_end_to_heard_reply_s": 4.798,
+          "reply_transcript": "Paris started as a small settlement."
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 18.629,
+          "assistant_stop_after_barge_s": 0.58,
+          "said_end_s": 22.729,
+          "reply_onset_s": 26.808,
+          "said_end_to_heard_reply_s": 4.079,
+          "reply_end_s": 28.669,
+          "reply_gaps_s": [],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 35.27,
+          "reply_onset_s": 38.948,
+          "said_end_to_heard_reply_s": 3.678,
+          "reply_end_s": 39.408,
+          "reply_gaps_s": [],
+          "reply_transcript": "Goodbye"
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    },
+    {
+      "run_id": "20261007T105527Z",
+      "channel": "PJSIP/7002@voicebot-loop",
+      "call_seconds": 42.757,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 3.047,
+        "end_s": 6.927
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 12.579,
+          "reply_onset_s": 16.566,
+          "said_end_to_heard_reply_s": 3.987,
+          "reply_transcript": "Paris started as a small settle"
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 18.066,
+          "assistant_stop_after_barge_s": 0.641,
+          "said_end_s": 22.166,
+          "reply_onset_s": 26.306,
+          "said_end_to_heard_reply_s": 4.14,
+          "reply_end_s": 28.526,
+          "reply_gaps_s": [
+            0.341
+          ],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 35.134,
+          "reply_onset_s": 39.527,
+          "said_end_to_heard_reply_s": 4.393,
+          "reply_end_s": 40.247,
+          "reply_gaps_s": [],
+          "reply_transcript": "Goodbye."
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    }
+  ]
+}

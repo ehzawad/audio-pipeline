@@ -1,0 +1,205 @@
+{
+  "scope": "Three synthetic calls through the loopback Asterisk lab with the OpenAI profile. Smoke evidence, not an SLO, WER or MOS measurement.",
+  "executed": "2026-10-07",
+  "path": "synthetic caller AudioSocket -> Asterisk PJSIP/7001@voicebot-loop (G.711 mu-law RTP on 127.0.0.1) -> Asterisk -> AudioSocket 127.0.0.1:9092 -> gateway -> OpenAI",
+  "evidence": "audio received by the caller's AudioSocket after the RTP loopback; not a handset or carrier path",
+  "environment": {
+    "asterisk": "22.5.2 (Ubuntu 26.04 universe package)",
+    "python": "3.13.5",
+    "packages": {
+      "fastapi": "0.142.2",
+      "uvicorn": "0.54.0",
+      "websockets": "16.1.1",
+      "httpx": "0.28.1",
+      "numpy": "2.5.3",
+      "soxr": "1.1.0",
+      "onnxruntime": "1.30.0"
+    },
+    "vad": "Silero ONNX from models/manifest.json (mediainbox/silero-vad-onnx@356ba5fec5d8)"
+  },
+  "configuration": {
+    "OPENAI_ASR_MODEL": "gpt-live-transcribe",
+    "LLM_MODEL": "gpt-5.2 (reasoning_effort none)",
+    "OPENAI_TTS_MODEL": "gpt-4o-mini-tts",
+    "OPENAI_TTS_VOICE": "cedar",
+    "TTS_LOOKAHEAD": 1,
+    "TTS_PREBUFFER_MS": 400,
+    "TTS_HEDGE_SECONDS": 2.5,
+    "VAD_END_MS_PHONE": 640,
+    "caller_voice": "marin"
+  },
+  "summary": {
+    "calls": 3,
+    "calls_without_failures": 3,
+    "answered_turns": 9,
+    "caller_end_to_heard_reply_s": {
+      "min": 3.249,
+      "median": 4.314,
+      "max": 5.368
+    },
+    "assistant_stop_after_barge_s": [
+      0.56,
+      0.601,
+      0.579
+    ],
+    "largest_gap_inside_a_reply_s": 0.421,
+    "sessions_active_after_each_call": [
+      0,
+      0,
+      0
+    ]
+  },
+  "calls": [
+    {
+      "run_id": "20261007T103930Z",
+      "channel": "PJSIP/7001@voicebot-loop",
+      "call_seconds": 42.325,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 2.025,
+        "end_s": 5.864
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 11.516,
+          "reply_onset_s": 16.187,
+          "said_end_to_heard_reply_s": 4.672,
+          "reply_transcript": "Paris started as a small settlement"
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 17.687,
+          "assistant_stop_after_barge_s": 0.56,
+          "said_end_s": 21.787,
+          "reply_onset_s": 26.026,
+          "said_end_to_heard_reply_s": 4.238,
+          "reply_end_s": 28.146,
+          "reply_gaps_s": [],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 34.758,
+          "reply_onset_s": 38.187,
+          "said_end_to_heard_reply_s": 3.43,
+          "reply_end_s": 39.807,
+          "reply_gaps_s": [
+            0.361
+          ],
+          "reply_transcript": "Goodbye and take care."
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    },
+    {
+      "run_id": "20261007T104016Z",
+      "channel": "PJSIP/7001@voicebot-loop",
+      "call_seconds": 41.846,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 1.393,
+        "end_s": 5.171
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 10.828,
+          "reply_onset_s": 16.195,
+          "said_end_to_heard_reply_s": 5.368,
+          "reply_transcript": "Paris started as a small settlement"
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 17.696,
+          "assistant_stop_after_barge_s": 0.601,
+          "said_end_s": 21.796,
+          "reply_onset_s": 26.501,
+          "said_end_to_heard_reply_s": 4.706,
+          "reply_end_s": 28.861,
+          "reply_gaps_s": [
+            0.421
+          ],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 35.462,
+          "reply_onset_s": 38.711,
+          "said_end_to_heard_reply_s": 3.249,
+          "reply_end_s": 39.332,
+          "reply_gaps_s": [],
+          "reply_transcript": "Goodbye."
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    },
+    {
+      "run_id": "20261007T104101Z",
+      "channel": "PJSIP/7001@voicebot-loop",
+      "call_seconds": 41.753,
+      "caller_voice": "marin",
+      "greeting": {
+        "onset_s": 1.579,
+        "end_s": 5.86
+      },
+      "turns": [
+        {
+          "say": "Hi. Can you tell me a little about the history of Paris?",
+          "said_end_s": 11.516,
+          "reply_onset_s": 15.83,
+          "said_end_to_heard_reply_s": 4.314,
+          "reply_transcript": "Paris began as a small settlement."
+        },
+        {
+          "say": "Sorry to cut in. Just tell me the capital of Japan.",
+          "barge_start_s": 17.331,
+          "assistant_stop_after_barge_s": 0.579,
+          "said_end_s": 21.431,
+          "reply_onset_s": 25.796,
+          "said_end_to_heard_reply_s": 4.365,
+          "reply_end_s": 27.916,
+          "reply_gaps_s": [
+            0.36
+          ],
+          "reply_transcript": "The capital of Japan is Tokyo."
+        },
+        {
+          "say": "Great, thanks. That is all for now. Goodbye.",
+          "said_end_s": 34.532,
+          "reply_onset_s": 38.713,
+          "said_end_to_heard_reply_s": 4.181,
+          "reply_end_s": 39.234,
+          "reply_gaps_s": [],
+          "reply_transcript": "Goodbye."
+        }
+      ],
+      "gateway_metrics_delta": {
+        "counts": {
+          "response.completed": 3,
+          "interruption": 1,
+          "response.cancelled": 1
+        },
+        "active_sessions": 0
+      },
+      "failures": []
+    }
+  ],
+  "not_included": "Recordings stay under data/ (ignored by Git). Caller speech was synthesized; no person was recorded."
+}
