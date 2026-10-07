@@ -89,7 +89,7 @@ The application's authenticated backend issues a short-lived JWT scoped to `tena
 
 See [client protocol](docs/PROTOCOLS.md). Mobile code is an integration core, not a finished iOS/Android call UI.
 
-## What is stronger in v3
+## Features
 
 Shared CAS state, expiring reservations, bounded tenant quotas, monotonic fences, reincarnation-safe grants, and explicit reconnect replace process-local ownership assumptions. A local monotonic media guard enforces lease loss at transport write boundaries. Checkpoints retain bounded dialogue history only when `PERSIST_HISTORY=true`; the default stores no transcript. Metadata retention and transcript consent still need an application policy.
 
