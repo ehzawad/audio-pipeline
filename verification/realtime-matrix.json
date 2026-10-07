@@ -1,0 +1,693 @@
+{
+  "scope": "Synthetic and recorded-human callers through the loopback Asterisk lab, both pipelines, on one host and one day. Smoke/latency evidence; not an SLO, WER or MOS study.",
+  "executed": "2026-10-07",
+  "callers": {
+    "synthetic": "OpenAI TTS voice 'marin' scenario with a barge-in and a Tokyo answer check",
+    "human": {
+      "corpus": {
+        "repo": "PolyAI/minds14",
+        "file": "en-US/train-00000-of-00001.parquet",
+        "revision": "40ce77cb32a384e4d50a568e1ec39ac804019d33",
+        "sha256": "37004471dc896ce20771b3fdda0ee8fb33ec7a030fb4e2fd047c561ec0a1ee30",
+        "license": "CC BY 4.0"
+      },
+      "utterances": 28,
+      "scenarios": 9,
+      "note": "real customers phoning a bank (G.711 8 kHz); 3 utterances per call; no answer check"
+    }
+  },
+  "routes": {
+    "audiosocket-7001": "caller -> Asterisk PJSIP/RTP loop -> AudioSocket -> gateway",
+    "twilio-emulated-7002": "caller -> Asterisk PJSIP/RTP loop -> AudioSocket -> scripts.twilio_emulator -> gateway Twilio route"
+  },
+  "pipelines": {
+    "cascaded": {
+      "VOICE_MODE": "cloud",
+      "asr": "gpt-live-transcribe (delay minimal)",
+      "llm": "gpt-5.6-luna via Responses API, reasoning none",
+      "tts": "gpt-4o-mini-tts-2025-12-15, prebuffer 400 ms, hedge 2.5 s, lookahead 1",
+      "vad": "Silero, 640 ms phone endpoint"
+    },
+    "live": {
+      "VOICE_MODE": "live",
+      "model": "gpt-live-1",
+      "voice": "marin",
+      "delegate": "gpt-5.6-luna",
+      "greeting": "commentary.append first, instructions.append fallback"
+    }
+  },
+  "calls_placed": {
+    "cascaded": {
+      "placed": 15,
+      "caller_gave_up_without_greeting": 0
+    },
+    "live_round1": {
+      "placed": 15,
+      "caller_gave_up_without_greeting": 1
+    },
+    "live_round2": {
+      "placed": 11,
+      "caller_gave_up_without_greeting": 5
+    },
+    "live_round3": {
+      "placed": 11,
+      "caller_gave_up_without_greeting": 1
+    }
+  },
+  "cascaded_results": [
+    {
+      "mode": "cloud",
+      "route": "audiosocket-7001",
+      "caller": "human",
+      "calls": 9,
+      "calls_without_failures": 9,
+      "turns": 27,
+      "turns_answered": 27,
+      "reply_latency_s": {
+        "median": 6.21,
+        "p90": 8.31,
+        "min": 2.33,
+        "max": 29.31
+      },
+      "greeting_onset_s": {
+        "median": 3.63,
+        "max": 9.44
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [],
+      "turns_with_assistant_audio_during_caller": 1,
+      "largest_gap_inside_reply_s": 2.295,
+      "failures": []
+    },
+    {
+      "mode": "cloud",
+      "route": "twilio-emulated-7002",
+      "caller": "human",
+      "calls": 3,
+      "calls_without_failures": 3,
+      "turns": 9,
+      "turns_answered": 9,
+      "reply_latency_s": {
+        "median": 6.63,
+        "p90": 9.4,
+        "min": 3.71,
+        "max": 29.99
+      },
+      "greeting_onset_s": {
+        "median": 2.47,
+        "max": 5.55
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0.78,
+      "failures": []
+    },
+    {
+      "mode": "cloud",
+      "route": "audiosocket-7001",
+      "caller": "synthetic",
+      "calls": 2,
+      "calls_without_failures": 2,
+      "turns": 6,
+      "turns_answered": 6,
+      "reply_latency_s": {
+        "median": 6.19,
+        "p90": 7.03,
+        "min": 3.87,
+        "max": 7.9
+      },
+      "greeting_onset_s": {
+        "median": 2.28,
+        "max": 2.92
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        0.42,
+        0.439
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0,
+      "failures": []
+    },
+    {
+      "mode": "cloud",
+      "route": "twilio-emulated-7002",
+      "caller": "synthetic",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 6.5,
+        "p90": 6.7,
+        "min": 3.72,
+        "max": 6.7
+      },
+      "greeting_onset_s": {
+        "median": 4.23,
+        "max": 4.23
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        0.439
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0.3,
+      "failures": []
+    }
+  ],
+  "cascaded_notes": "3 of 36 human turns ended in the bundled unavailable prompt after ~7-30 s (provider failure; the cause was not captured because that log was overwritten). A follow-up profile of 9 human turns: ASR final 0.6-1.1 s, LLM first token 1.6-2.8 s, first audio 3.6-15.1 s after endpoint; the TTS stage dominated (15 hedges in 9 turns).",
+  "live_results": [
+    {
+      "mode": "live",
+      "route": "audiosocket-7001",
+      "caller": "human",
+      "calls": 8,
+      "calls_without_failures": 8,
+      "turns": 24,
+      "turns_answered": 24,
+      "reply_latency_s": {
+        "median": 1.4,
+        "p90": 4.43,
+        "min": 0.0,
+        "max": 8.8
+      },
+      "greeting_onset_s": {
+        "median": 2.45,
+        "max": 2.51
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [],
+      "turns_with_assistant_audio_during_caller": 4,
+      "largest_gap_inside_reply_s": 1.251,
+      "failures": []
+    },
+    {
+      "mode": "live",
+      "route": "audiosocket-7001",
+      "caller": "synthetic",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.07,
+        "p90": 1.43,
+        "min": 0.94,
+        "max": 1.43
+      },
+      "greeting_onset_s": {
+        "median": 2.41,
+        "max": 2.41
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        1.364
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0,
+      "failures": []
+    },
+    {
+      "mode": "live",
+      "route": "twilio-emulated-7002",
+      "caller": "synthetic",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.25,
+        "p90": 1.28,
+        "min": 1.09,
+        "max": 1.28
+      },
+      "greeting_onset_s": {
+        "median": 2.47,
+        "max": 2.47
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        1.56
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0.26,
+      "failures": []
+    }
+  ],
+  "live_history": {
+    "round1_instructions_in_start": [
+      {
+        "mode": "live",
+        "route": "audiosocket-7001",
+        "caller": "human",
+        "calls": 8,
+        "calls_without_failures": 8,
+        "turns": 24,
+        "turns_answered": 24,
+        "reply_latency_s": {
+          "median": 1.44,
+          "p90": 1.83,
+          "min": 0.0,
+          "max": 2.07
+        },
+        "greeting_onset_s": {
+          "median": 5.54,
+          "max": 13.91
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [],
+        "turns_with_assistant_audio_during_caller": 2,
+        "largest_gap_inside_reply_s": 1.392,
+        "failures": []
+      },
+      {
+        "mode": "live",
+        "route": "twilio-emulated-7002",
+        "caller": "human",
+        "calls": 3,
+        "calls_without_failures": 3,
+        "turns": 9,
+        "turns_answered": 9,
+        "reply_latency_s": {
+          "median": 1.55,
+          "p90": 1.83,
+          "min": 0.96,
+          "max": 2.08
+        },
+        "greeting_onset_s": {
+          "median": 5.49,
+          "max": 27.63
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [],
+        "turns_with_assistant_audio_during_caller": 0,
+        "largest_gap_inside_reply_s": 1.2,
+        "failures": []
+      },
+      {
+        "mode": "live",
+        "route": "audiosocket-7001",
+        "caller": "synthetic",
+        "calls": 2,
+        "calls_without_failures": 2,
+        "turns": 6,
+        "turns_answered": 6,
+        "reply_latency_s": {
+          "median": 1.16,
+          "p90": 1.37,
+          "min": 0.95,
+          "max": 1.56
+        },
+        "greeting_onset_s": {
+          "median": 4.49,
+          "max": 5.17
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [
+          1.789,
+          1.424
+        ],
+        "turns_with_assistant_audio_during_caller": 0,
+        "largest_gap_inside_reply_s": 0,
+        "failures": []
+      },
+      {
+        "mode": "live",
+        "route": "twilio-emulated-7002",
+        "caller": "synthetic",
+        "calls": 1,
+        "calls_without_failures": 0,
+        "turns": 3,
+        "turns_answered": 3,
+        "reply_latency_s": {
+          "median": 1.43,
+          "p90": 1.6,
+          "min": 1.33,
+          "max": 1.6
+        },
+        "greeting_onset_s": {
+          "median": 4.15,
+          "max": 4.15
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [
+          1.439
+        ],
+        "turns_with_assistant_audio_during_caller": 0,
+        "largest_gap_inside_reply_s": 0,
+        "failures": [
+          "turn 2: expected 'Tokyo' in the heard reply"
+        ]
+      }
+    ],
+    "round2_instructions_append_with_retry": [
+      {
+        "mode": "live",
+        "route": "audiosocket-7001",
+        "caller": "human",
+        "calls": 4,
+        "calls_without_failures": 4,
+        "turns": 12,
+        "turns_answered": 12,
+        "reply_latency_s": {
+          "median": 1.2,
+          "p90": 1.4,
+          "min": 0.01,
+          "max": 1.48
+        },
+        "greeting_onset_s": {
+          "median": 3.87,
+          "max": 23.65
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [],
+        "turns_with_assistant_audio_during_caller": 1,
+        "largest_gap_inside_reply_s": 0.775,
+        "failures": []
+      },
+      {
+        "mode": "live",
+        "route": "audiosocket-7001",
+        "caller": "synthetic",
+        "calls": 1,
+        "calls_without_failures": 1,
+        "turns": 3,
+        "turns_answered": 3,
+        "reply_latency_s": {
+          "median": 1.29,
+          "p90": 1.42,
+          "min": 1.26,
+          "max": 1.42
+        },
+        "greeting_onset_s": {
+          "median": 2.95,
+          "max": 2.95
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [
+          3.333
+        ],
+        "turns_with_assistant_audio_during_caller": 0,
+        "largest_gap_inside_reply_s": 0,
+        "failures": []
+      },
+      {
+        "mode": "live",
+        "route": "twilio-emulated-7002",
+        "caller": "synthetic",
+        "calls": 1,
+        "calls_without_failures": 1,
+        "turns": 3,
+        "turns_answered": 3,
+        "reply_latency_s": {
+          "median": 1.16,
+          "p90": 1.25,
+          "min": 1.16,
+          "max": 1.25
+        },
+        "greeting_onset_s": {
+          "median": 3.54,
+          "max": 3.54
+        },
+        "greetings_missing": 0,
+        "barge_stop_s": [
+          2.081
+        ],
+        "turns_with_assistant_audio_during_caller": 1,
+        "largest_gap_inside_reply_s": 0,
+        "failures": []
+      }
+    ],
+    "greeting_counters": {
+      "round2_instructions_with_retry": {
+        "live.greeting_retry": 6,
+        "live.greeting_unanswered": 6,
+        "live.closed.close_requested": 11,
+        "response.live": 11
+      },
+      "round3_commentary_first": {
+        "live.closed.close_requested": 10,
+        "response.live": 11,
+        "live.greeting_retry": 1,
+        "live.greeting_unanswered": 1
+      }
+    }
+  },
+  "live_final_regression": [
+    {
+      "mode": "live",
+      "route": "audiosocket-7001",
+      "caller": "human",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.51,
+        "p90": 1.61,
+        "min": 0.02,
+        "max": 1.61
+      },
+      "greeting_onset_s": {
+        "median": 2.41,
+        "max": 2.41
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 1.834,
+      "failures": []
+    },
+    {
+      "mode": "live",
+      "route": "twilio-emulated-7002",
+      "caller": "human",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.96,
+        "p90": 2.44,
+        "min": 1.95,
+        "max": 2.44
+      },
+      "greeting_onset_s": {
+        "median": 2.99,
+        "max": 2.99
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [],
+      "turns_with_assistant_audio_during_caller": 1,
+      "largest_gap_inside_reply_s": 1.259,
+      "failures": []
+    },
+    {
+      "mode": "live",
+      "route": "audiosocket-7001",
+      "caller": "synthetic",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.42,
+        "p90": 1.44,
+        "min": 1.09,
+        "max": 1.44
+      },
+      "greeting_onset_s": {
+        "median": 2.52,
+        "max": 2.52
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        2.82
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0,
+      "failures": []
+    },
+    {
+      "mode": "live",
+      "route": "twilio-emulated-7002",
+      "caller": "synthetic",
+      "calls": 1,
+      "calls_without_failures": 1,
+      "turns": 3,
+      "turns_answered": 3,
+      "reply_latency_s": {
+        "median": 1.01,
+        "p90": 1.48,
+        "min": 0.15,
+        "max": 1.48
+      },
+      "greeting_onset_s": {
+        "median": 2.51,
+        "max": 2.51
+      },
+      "greetings_missing": 0,
+      "barge_stop_s": [
+        1.86
+      ],
+      "turns_with_assistant_audio_during_caller": 0,
+      "largest_gap_inside_reply_s": 0.44,
+      "failures": []
+    }
+  ],
+  "browser": [
+    {
+      "status": "passed",
+      "timing": "End of speech \u2192 first dispatch: 4399 ms. Endpoint: 480 ms. Status: completed.",
+      "user_text": [
+        "I would like to change my address"
+      ],
+      "assistant_text": [
+        "Sure, I can help with that.",
+        "What\u2019s your new address?"
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "cloud",
+      "transport": "webrtc",
+      "evidence": "rtp_dispatch_estimate"
+    },
+    {
+      "status": "passed",
+      "timing": "End of speech \u2192 first dispatch: 5125 ms. Endpoint: 480 ms. Status: completed.",
+      "user_text": [
+        "Hi there, could you tell me the capital of Japan?"
+      ],
+      "assistant_text": [
+        "The capital of Japan is Tokyo."
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "cloud",
+      "transport": "webrtc",
+      "evidence": "rtp_dispatch_estimate"
+    },
+    {
+      "status": "passed",
+      "timing": "End of speech \u2192 first dispatch: 6766 ms. Endpoint: 480 ms. Status: completed.",
+      "user_text": [
+        "I would like to change my address"
+      ],
+      "assistant_text": [
+        "Sure. Is this for your billing address,",
+        "shipping address, or both?"
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "cloud",
+      "transport": "websocket",
+      "evidence": "browser_renderer_ack"
+    },
+    {
+      "status": "passed",
+      "timing": "End of speech \u2192 first dispatch: 5832 ms. Endpoint: 480 ms. Status: completed.",
+      "user_text": [
+        "Hi there, could you tell me the capital of Japan?"
+      ],
+      "assistant_text": [
+        "The capital of Japan is Tokyo."
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "cloud",
+      "transport": "websocket",
+      "evidence": "browser_renderer_ack"
+    },
+    {
+      "status": "passed",
+      "timing": "Per-turn dispatch timing appears here.",
+      "user_text": [
+        "I would like to change my address"
+      ],
+      "assistant_text": [
+        "Sure, I can help with that. What's your new address and when should the change take effect?"
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "live",
+      "transport": "webrtc",
+      "evidence": "rtp_dispatch_estimate"
+    },
+    {
+      "status": "passed",
+      "timing": "Per-turn dispatch timing appears here.",
+      "user_text": [
+        "Hi there. Could you tell me the capital of Japan"
+      ],
+      "assistant_text": [
+        "Sure, it's Tokyo."
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "live",
+      "transport": "webrtc",
+      "evidence": "rtp_dispatch_estimate"
+    },
+    {
+      "status": "passed",
+      "timing": "Per-turn dispatch timing appears here.",
+      "user_text": [
+        "I would like to change my address"
+      ],
+      "assistant_text": [
+        "Sure. What is your new address?"
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "live",
+      "transport": "websocket",
+      "evidence": "browser_renderer_ack"
+    },
+    {
+      "status": "passed",
+      "timing": "Per-turn dispatch timing appears here.",
+      "user_text": [
+        "Hi there. Could you tell me the capital of Japan"
+      ],
+      "assistant_text": [
+        "Sure, it's Tokyo."
+      ],
+      "browser": "153.0.8010.12",
+      "mode": "live",
+      "transport": "websocket",
+      "evidence": "browser_renderer_ack"
+    }
+  ],
+  "asr_on_human_audio": [
+    {
+      "model": "gpt-live-transcribe",
+      "delay": "minimal",
+      "utterances": 28,
+      "failures": 0,
+      "word_disagreement_vs_corpus_reference": 0.147,
+      "final_after_audio_s": {
+        "median": 0.7075,
+        "max": 0.811
+      }
+    },
+    {
+      "model": "gpt-transcribe",
+      "delay": "default",
+      "utterances": 28,
+      "failures": 0,
+      "word_disagreement_vs_corpus_reference": 0.147,
+      "final_after_audio_s": {
+        "median": 0.8545,
+        "max": 1.342
+      }
+    },
+    {
+      "model": "gpt-4o-transcribe",
+      "delay": "minimal",
+      "utterances": 28,
+      "failures": 0,
+      "word_disagreement_vs_corpus_reference": 0.147,
+      "final_after_audio_s": {
+        "median": 0.866,
+        "max": 4.845
+      }
+    }
+  ],
+  "asr_note": "All three made 71 edits against 483 reference words; models disagree with each other on 0.8-2.5% of words. The MInDS-14 references contain recognition errors and truncations, so this is agreement, not WER.",
+  "not_included": "Recordings and the corpus stay under data/ (ignored by Git)."
+}

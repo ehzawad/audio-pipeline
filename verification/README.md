@@ -26,7 +26,7 @@ One optional test needs aiortc/PyAV; one needs real downloaded neural models. Th
 
 Executed on one Ubuntu 26.04 development host (Python 3.13.5 via uv, Asterisk 22.5.2, Redis 8.0.5, Node 26.3.0). Model calls went to the public OpenAI API from that host's network. Every latency below is specific to that network and day, and a handful of samples is not a provider benchmark.
 
-**Deterministic.** 161 Python tests passed and one skipped (the downloaded-neural-model test), with `TEST_REDIS_URL` pointing at a disposable loopback Redis. That makes the four Redis contracts locally executed for the first time; see `tests.txt`. The JavaScript client tests pass 3 of 3. Swift and Kotlin clients are unchanged and were not rerun. The new adapters are tested against local protocol servers and mock HTTP transports. Those tests cover one commit per utterance, rejection of a final for any item other than the committed one, provider errors and closes without a final, the PCM media type and the request body. TTS lookahead, in-order failure after earlier audio, prebuffer, hedging and the cancellation of every attempt are also tested deterministically.
+**Deterministic.** 161 Python tests passed and one skipped (at that point) (the downloaded-neural-model test), with `TEST_REDIS_URL` pointing at a disposable loopback Redis. That makes the four Redis contracts locally executed for the first time; see `tests.txt`. The JavaScript client tests pass 3 of 3. Swift and Kotlin clients are unchanged and were not rerun. The new adapters are tested against local protocol servers and mock HTTP transports. Those tests cover one commit per utterance, rejection of a final for any item other than the committed one, provider errors and closes without a final, the PCM media type and the request body. TTS lookahead, in-order failure after earlier audio, prebuffer, hedging and the cancellation of every attempt are also tested deterministically.
 
 **Live OpenAI provider path.** `scripts.probe` on a 4.5-second synthetic question produced the correct transcript and a sensible two-sentence reply. Through `/v1/realtime?intent=transcription`, the time from end of audio to final transcript was, over 4 runs each:
 
@@ -64,3 +64,35 @@ This exercises the gateway's Twilio code with real models. It is not Twilio inte
 **LAN softphone.** baresip 1.1.0, an open-source SIP client, registered with digest authentication to the opt-in softphone account over this host's LAN address. It dialed 7001 with a recorded question as its microphone. It heard the full greeting and then "The capital of Japan is Tokyo." over RTP on the LAN interface. That is one call made from the same host; a phone on Wi-Fi was not tested here.
 
 **Not executed in this update.** No real Twilio or PSTN call was made, and no handset was used. The browser microphone and WebRTC through TURN were not retested. No WER, MOS or concurrency figure is claimed.
+
+## Update: newest OpenAI models, GPT-Live mode and recorded human callers (7 October 2026, later)
+
+Same host, the same day, and the public OpenAI API. `realtime-matrix.json` holds every number; recordings stay under `data/`.
+
+**Deterministic.** 171 Python tests passed and one skipped. The new tests cover:
+
+- the Responses API adapter: request body, text deltas, error, failure and tool-call refusal;
+- transcription session fields per model family (the 4o models reject `languages`; `delay` is `gpt-live-transcribe` only);
+- the GPT-Live session against a local protocol server: start config, no audio sent before `session.started`, commentary greeting with instruction fallback, paced output at the transport rate, timestamp-ordered transcript turns, graceful close, and the unavailable prompt.
+
+**Model choice.** The choice was made from OpenAI's model list and current docs, then measured on this host:
+
+- `gpt-5.6-luna` over Responses returned its first token in a median 0.79 s (n=6); `gpt-6-luna` took a median 4.1 s over Responses and 1.7 s over Chat.
+- `gpt-6.1-sol` rejects `reasoning_effort: none`.
+- Over 12 requests, `gpt-4o-mini-tts-2025-12-15` had one failure and no stalls over 2 s. The unpinned alias had two failures and four stalls of up to 11 s.
+- A later sample of eight requests showed one multi-second stall from both the snapshot and `tts-1`, so the TTS stage stays variable.
+
+**Recorded human callers.** 28 recordings come from MInDS-14 en-US (PolyAI, CC BY 4.0, revision 40ce77cb): real customers phoning a bank, G.711 8 kHz, 2 per intent across 14 intents, grouped into 9 three-turn calls.
+
+- `gpt-live-transcribe`, `gpt-transcribe` and `gpt-4o-transcribe` each made 71 edits against the 483 reference words, and disagree with each other on 0.8–2.5% of words. The dataset's own references contain truncations and recognition errors, so this is agreement, not WER.
+- `gpt-live-transcribe` finished a median 0.71 s after the audio ended, against 0.85–0.87 s for the other two.
+
+**Phone calls, both pipelines.** Calls went through the loopback Asterisk lab on 7001 (AudioSocket) and 7002 (the emulated Twilio route).
+
+- **Cascaded:** 15 calls placed, all with reports. 45 turns answered, but 3 of the 36 human turns ended in the bundled unavailable prompt after about 7–30 s; their cause was not captured. Caller-to-heard-reply was a median 6.2–6.6 s (p90 8.3–9.4 s). A follow-up profile put TTS at 1.3–12.6 s of that. The interrupted reply stopped 0.42–0.44 s after a barge-in.
+- **Live, final greeting method:** 11 calls placed, and the scripted caller gave up after 30 s of silence on one, where both greeting requests went unanswered. Of the other 10 calls, every turn was answered: greeting about 2.4–2.5 s after answer, human replies a median 1.4 s after the caller stopped (p90 4.4 s), barge-in stop 1.4–1.6 s. A further 4-call regression on the final code was clean on both routes: replies 0.02–2.4 s, barge-in stop 1.9–2.8 s.
+- **Earlier live rounds:** the greeting failed on 1 of 15 calls with the greeting in the start instructions and 5 of 11 with `instructions.append`; these are kept in the record.
+
+**Browser.** Headless Chromium 153 used a WAV as its microphone. Eight runs passed: both pipelines, WebSocket and WebRTC, the synthetic Tokyo question and a recorded human utterance. Over WebSocket, "completed" requires the page's own render acknowledgments. Cascaded end-of-speech to first dispatch was 4.4–6.8 s.
+
+**Not executed.** No PSTN, carrier or real Twilio call and no handset were used. There was no concurrency test of GPT-Live sessions, and no WER or MOS against verified references.

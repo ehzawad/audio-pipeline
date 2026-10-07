@@ -114,6 +114,18 @@ async def synthesize(client, env, text, cache: Path):
     return np.concatenate([rs.process(x), rs.flush()])
 
 
+async def utterance(client, env, spec, cache: Path):
+    """A turn's caller audio: a recorded WAV ("audio") or OpenAI TTS of "say"."""
+    if "audio" not in spec:
+        return await synthesize(client, env, spec["say"], cache)
+    with wave.open(spec["audio"], "rb") as w:
+        if w.getsampwidth() != 2 or w.getnchannels() != 1:
+            raise ValueError("caller WAVs must be mono 16-bit PCM")
+        rate, x = w.getframerate(), pcm16_to_float(w.readframes(w.getnframes()))
+    rs = Resampler(rate, RATE)
+    return np.concatenate([rs.process(x), rs.flush()])
+
+
 async def transcribe(client, env, samples):
     if len(samples) < RATE // 2:
         return ""
@@ -156,9 +168,12 @@ async def converse(line: Line, scenario, utterances, args):
     turns = []
     rx, tx = asyncio.create_task(listen()), asyncio.create_task(speak())
     try:
-        greeting_onset = await ear.onset_after(0, args.reply_timeout)
-        greeting_end = await ear.quiet_for(args.hold, args.reply_timeout, not_before=args.settle)
-        greeting = {"onset_s": round(greeting_onset, 3), "end_s": round(greeting_end, 3)}
+        try:
+            greeting_onset = await ear.onset_after(0, args.greeting_timeout)
+            greeting_end = await ear.quiet_for(args.hold, args.reply_timeout, not_before=args.settle)
+            greeting = {"onset_s": round(greeting_onset, 3), "end_s": round(greeting_end, 3)}
+        except TimeoutError:
+            greeting = None  # like a person after a silent pickup: start talking anyway
         for i, (spec, samples) in enumerate(zip(scenario, utterances)):
             turn = {"say": spec["say"]}
             if "barge_after" in spec:
@@ -174,6 +189,9 @@ async def converse(line: Line, scenario, utterances, args):
             else:
                 await ear.quiet_for(args.hold, args.reply_timeout)
                 start, end = await say(samples)
+                # Assistant audio heard while the caller is still talking: an endpoint taken
+                # inside a human pause, or a full-duplex model choosing to overlap.
+                turn["assistant_voiced_during_caller_s"] = round(len(ear.voiced_times(start, end)) * .02, 2)
             turn["said_end_s"] = round(end, 3)
             try:
                 onset = await ear.onset_after(end, args.reply_timeout)
@@ -203,7 +221,7 @@ async def converse(line: Line, scenario, utterances, args):
     return greeting, turns, ear, np.concatenate(said) if said else np.zeros(0, np.float32), duration
 
 
-async def analyze(client, env, scenario, turns, ear, duration):
+async def analyze(client, env, scenario, turns, ear, duration, greeting=True):
     """Independently transcribe each heard reply and check the scenario's expectations."""
     failures = []
     for i, turn in enumerate(turns):
@@ -220,6 +238,8 @@ async def analyze(client, env, scenario, turns, ear, duration):
             failures.append(f"turn {i + 1}: expected '{expect}' in the heard reply")
     if len(turns) < len(scenario) or any("reply_onset_s" not in t for t in turns):
         failures.append("not every turn received a reply")
+    if greeting is None:
+        failures.append("no greeting was heard")
     return failures
 
 
@@ -230,6 +250,7 @@ def add_arguments(p):
     p.add_argument("--settle", type=float, default=0,
                    help="never treat the greeting as finished before this many seconds")
     p.add_argument("--reply-timeout", type=float, default=30)
+    p.add_argument("--greeting-timeout", type=float, default=10, help="then speak without a greeting")
     p.add_argument("--call-timeout", type=float, default=240)
 
 

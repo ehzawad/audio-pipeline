@@ -16,6 +16,16 @@ Issue only the tenant/subject and home-cell audience the logged-in principal is 
 
 Twilio/PBX routes map a configured provider account or private PBX to DEFAULT_TENANT. To host independent carrier accounts securely, isolate edges/configuration or add a reviewed account-to-tenant registry. Never trust a client-provided tenant header on the telephone ingress.
 
+## GPT-Live mode
+
+`VOICE_MODE=live` gives each call one OpenAI GPT-Live session (`wss://api.openai.com/v1/live/sessions`), and no local VAD, ASR, LLM or TTS runs. The model owns turn-taking, wording and when to yield to a barge-in. The gateway still owns admission, lease fencing, transport writes, real-time pacing, playback credit, history checkpoints and cleanup.
+
+- **Billing and capacity.** GPT-Live is billed per session second, plus the delegated backend model (`LIVE_DELEGATE_MODEL`). OpenAI documents concurrent-session limits per account tier; set `MAX_SESSIONS` and `TENANT_SESSION_LIMIT` below them.
+- **Audio before the session starts.** The gateway reads caller audio from the first frame but drops it until `session.started`. Reading late would turn a slow session start into a burst that the ingress rate budget must reject.
+- **Greeting.** GPT-Live does not reliably speak first. A greeting only in the start instructions was often skipped, and `session.instructions.append` (the documented route) was answered after 3.7–12.7 s or not at all. The gateway therefore sends `session.commentary.append` once the session starts, falls back to the instruction after `LIVE_GREETING_RETRY_SECONDS`, and counts `live.greeting_retry` and `live.greeting_unanswered`. Commentary may paraphrase, so the session instructions require any greeting to disclose the AI. In the final round of 11 calls, 10 greetings arrived about 2.5 s after answer and one session never spoke first.
+- **No `clear`.** Output arrives as continuous real-time audio, silence included, so at most one playback window is queued locally and nothing stale needs clearing. How fast speech stops after a barge-in is the model's behavior; compare it with the cascaded pipeline before choosing a mode.
+- **Failure.** If the live service is unreachable, the caller hears the bundled unavailable prompt. Watch `live.closed.<reason>`, `live.failure`, `live.error_event` and the `live.billed_seconds` histogram. `scripts.doctor --probe` checks that the live and delegate models are available to the key.
+
 ## Redis and recovery
 
 Run the cell Redis on a private endpoint with ACLs, TLS where needed, noeviction, memory alarms, backups and a tested persistence policy. Shared keys use one cell/tenant hash tag; no audio frame is written to Redis. A tenant's metadata mutations serialize briefly in Lua. This is not an unlimited quota index or an automatic global Redis Cluster routing client.

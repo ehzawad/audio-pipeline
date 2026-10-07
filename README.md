@@ -64,7 +64,13 @@ The hosted profile `.env.cloud.example` uses Deepgram and ElevenLabs plus a conf
 
 ## Hosted OpenAI profile
 
-`.env.openai.example` runs every model stage on one OpenAI account: realtime transcription (`ASR_PROVIDER=openai`), the generic streaming chat adapter pointed at `https://api.openai.com/v1`, and `/v1/audio/speech` PCM (`TTS_PROVIDER=openai`). `OPENAI_API_KEY` comes from the process environment; `LLM_API_KEY=${OPENAI_API_KEY}` is interpolated by python-dotenv, so the key is not copied into `.env`. Silero VAD stays local and owns endpointing: each utterance opens its own transcription session with server turn detection disabled and exactly one commit, and only the committed item's transcript can become the final.
+`.env.openai.example` runs every model stage on one OpenAI account:
+
+- realtime transcription with `gpt-live-transcribe` at `delay: minimal`;
+- the Responses API (`LLM_API=responses`) with `gpt-5.6-luna` and reasoning off;
+- `/v1/audio/speech` PCM from the pinned `gpt-4o-mini-tts-2025-12-15` snapshot.
+
+`LLM_API=chat` keeps Chat Completions for other compatible servers. `OPENAI_API_KEY` comes from the process environment; `LLM_API_KEY=${OPENAI_API_KEY}` is interpolated by python-dotenv, so the key is not copied into `.env`. Silero VAD stays local and owns endpointing: each utterance opens its own transcription session with server turn detection disabled and exactly one commit, and only the committed item's transcript can become the final.
 
 ```sh
 uv venv --python 3.13 && uv pip install -e '.[dev,vad]'
@@ -75,6 +81,28 @@ uv run python -m scripts.probe question.wav --include-text
 ```
 
 From one development host, this TTS streamed a 0.2-second head chunk and then paused, usually 0.3–0.8 s and occasionally for over ten seconds. Three opt-in policies address that, and the profile enables all three. `TTS_LOOKAHEAD` requests later phrases while the current one plays. `TTS_PREBUFFER_MS` holds a phrase until that much audio has arrived. `TTS_HEDGE_SECONDS` races one duplicate request when the first has not filled its prebuffer in time. Nothing of a phrase is played before one attempt wins, so the losing duplicate is never heard. A call can therefore hold up to `TTS_LOOKAHEAD + 1` phrase requests plus one hedge, so size `TTS_CONCURRENCY` and the provider quota accordingly. These measurements describe one network on one day. They are not a provider benchmark: see [verification](verification/README.md).
+
+The models were chosen from OpenAI's model list and measured on 7 October 2026:
+
+- `gpt-5.6-luna` over Responses returned its first token in a median 0.79 s.
+- The newer `gpt-6-luna` took a median 4.1 s through Responses and 1.7 s through Chat Completions, which is too slow for a turn.
+- The pinned TTS snapshot stalled less often than the unpinned `gpt-4o-mini-tts` alias.
+
+Even so, hosted TTS was the slowest and most variable stage of this pipeline from this host.
+
+## GPT-Live mode (speech-to-speech)
+
+`.env.live.example` (`VOICE_MODE=live`) hands each call to one OpenAI GPT-Live session (`gpt-live-1`), which delegates reasoning to `gpt-5.6-luna`. No local VAD, ASR, LLM or TTS runs. The model owns turn-taking, wording and when to yield. The gateway keeps everything else:
+
+- admission, leases and fencing;
+- browser, WebRTC, Twilio and AudioSocket transports;
+- real-time pacing and playback credit;
+- history checkpoints, built from the model's timed transcripts;
+- cleanup.
+
+The greeting goes as `session.commentary.append` after `session.started`, with `session.instructions.append` as a fallback. Neither is guaranteed to be answered.
+
+On the same lab, through Asterisk, live replies were heard 1.0–2.4 s after the caller stopped (median about 1.4 s), against a 6.2 s median for the cascaded profile. Interrupted speech stopped 1.4–2.8 s after a barge-in, against about 0.4 s cascaded. With the final greeting method, the greeting arrived about 2.5 s after answer, but 1 of 11 sessions never spoke first. GPT-Live is billed per session second plus the delegate model. The [runbook](docs/RUNBOOK.md) and [verification](verification/README.md) give the details.
 
 ## Shared control and native-client integration
 
@@ -134,6 +162,10 @@ TEST_REDIS_URL=redis://127.0.0.1:6379/0 python -m pytest tests/test_redis_integr
 # Synthetic phone calls (real models; see deploy/asterisk/README.md and verification/):
 uv run python -m scripts.pbx_lab                                   # AudioSocket route (7001)
 uv run python -m scripts.pbx_lab --channel PJSIP/7002@voicebot-loop  # Twilio route via scripts.twilio_emulator
+# Recorded human callers (MInDS-14, CC BY 4.0; needs the lab extra) and an ASR check on them:
+uv run python -m scripts.human_corpus
+uv run python -m scripts.pbx_lab --scenario data/human/scenario-01.json
+uv run python -m scripts.asr_eval
 # Cross-gateway synthetic traffic; configure both gateways with the same control state:
 python -m scripts.load_ws --url http://127.0.0.1:8010 \
   --media-url http://127.0.0.1:8011 --calls 32
@@ -141,4 +173,4 @@ python -m scripts.load_ws --url http://127.0.0.1:8010 \
 
 [Research notes](docs/SOURCES.md) connect ACL 2026 Full-Duplex-Bench-v2, Interspeech 2025 FD-Bench, and EACL 2026 turn-taking analysis to concrete evaluation boundaries. They do not claim that this repository reproduced those papers' scores. [The mental-model guide](docs/BOOK.md) connects timing, state, recovery, and scale. [The runbook](docs/RUNBOOK.md) covers deployment and failure drills. [Verification](verification/README.md) records the actual checks and omissions.
 
-Outbound calling is opt-in and protected, but its SQLite effect ledger is deliberately **single-host**. Keep it disabled in replicated media gateways; a dedicated single-host dialer can use the supplied route. Multi-host durable dialing, human transfer/contact-center routing, emergency calling, recording compliance, active-active control-store failover, native speech-to-speech models, and semantic turn models are not implemented.
+Outbound calling is opt-in and protected, but its SQLite effect ledger is deliberately **single-host**. Keep it disabled in replicated media gateways; a dedicated single-host dialer can use the supplied route. Multi-host durable dialing, human transfer/contact-center routing, emergency calling, recording compliance, active-active control-store failover, self-hosted speech-to-speech models, and semantic turn models are not implemented. Hosted speech-to-speech is available only through GPT-Live mode.

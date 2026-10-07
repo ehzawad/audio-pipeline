@@ -116,7 +116,7 @@ async def run(args):
     root = args.recordings or Path("data/pbx-lab")
     (root / "caller-cache").mkdir(parents=True, exist_ok=True)
     async with httpx.AsyncClient(timeout=60) as client:
-        utterances = [await lab_caller.synthesize(client, env, t["say"], root / "caller-cache") for t in scenario]
+        utterances = [await lab_caller.utterance(client, env, t, root / "caller-cache") for t in scenario]
         result = asyncio.get_running_loop().create_future()
 
         async def accept(reader, writer):
@@ -146,11 +146,12 @@ async def run(args):
             await server.wait_closed()
         await asyncio.sleep(1)
         after = await gateway_metrics(client, args.gateway)
-        failures = await lab_caller.analyze(client, env, scenario, turns, ear, duration)
+        failures = await lab_caller.analyze(client, env, scenario, turns, ear, duration, greeting)
     report = {
         "scope": "synthetic caller over the loopback Asterisk lab; one call, not a latency SLO",
         "evidence": "audio received by the caller's AudioSocket after Asterisk PJSIP/RTP loopback",
         "run_id": run_id, "channel": args.channel, "call_seconds": round(duration, 3),
+        "scenario": str(args.scenario) if args.scenario else "default",
         "caller_voice": env["CALLER_VOICE"], "greeting": greeting, "turns": turns,
         "gateway_metrics_delta": delta(before, after), "recordings": str(root / run_id),
         "failures": failures,
