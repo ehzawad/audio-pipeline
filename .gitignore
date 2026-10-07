@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 .env
 .env.*
+!.env.example
 !.env.*.example
 models/
 data/
@@ -12,4 +13,9 @@ data/
 build/
 dist/
 node_modules/
+.build/
+.swiftpm/
+*.jar
+.coverage*
+htmlcov/
 verification/ci-*

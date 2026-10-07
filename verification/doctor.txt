@@ -1,0 +1,6 @@
+{"python": "3.13.5", "mode": "demo", "deployment": "development", "session_limit": 4, "provider_secrets": "never printed"}
+fastapi: present
+numpy: present
+soxr: present
+websockets: present
+This does not establish WER, TTS quality, realtime capacity, or phone connectivity.

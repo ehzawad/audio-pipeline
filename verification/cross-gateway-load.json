@@ -1,0 +1,14 @@
+{
+  "scope": "synthetic transport traffic; NOT real model quality or PSTN latency",
+  "control_backend": "SQLite file shared by two independent processes; NOT Redis or fleet capacity",
+  "control_url": "http://127.0.0.1:8010",
+  "media_url": "http://127.0.0.1:8011",
+  "sessions_attempted": 32,
+  "sessions_completed": 32,
+  "active_sessions_after_shutdown": [
+    0,
+    0
+  ],
+  "full_local_report_sha256": "8bb9dffdf6b33171a6b182549b051a57dabd22d35c5fffe2258483ab83bbfda2",
+  "playback_receipt": "synthetic client acknowledgement, NOT physical audio rendering"
+}
