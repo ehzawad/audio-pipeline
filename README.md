@@ -1,4 +1,4 @@
-# Audio Pipeline 3.0
+# Audio Pipeline
 
 An English streaming voice gateway for browsers, native-client integrations, and telephone media. Evolved from the supplied `voicebot` implementation and Duplex Voice 2.0. The v3 change is **explicit shared session ownership**, not a claim that a newer model automatically improves conversation quality.
 
