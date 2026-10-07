@@ -62,7 +62,7 @@ def download(api,fetch,root,repo,revision,directory,files):
     entries=[]
     for filename in files:
         path=Path(fetch(repo_id=repo,revision=revision,filename=filename,local_dir=root/directory))
-        entries.append({'file':str(path.relative_to(root)),'sha256':sha256(path),'bytes':path.stat().st_size})
+        entries.append({'file':str(path.resolve().relative_to(root.resolve())),'sha256':sha256(path),'bytes':path.stat().st_size})
         print(f'{repo}@{revision[:12]} {filename}: {path.stat().st_size} bytes')
     return {'repo':repo,'revision':revision,'files':entries}
 
