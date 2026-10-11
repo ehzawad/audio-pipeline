@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from types import SimpleNamespace
 import numpy as np
@@ -8,7 +9,8 @@ import websockets
 from fastapi.testclient import TestClient
 from duplex_voice.audio import float_to_pcm16
 from duplex_voice.config import Settings
-from duplex_voice.providers.clients import CompatibleLLM, RemoteTTS, RemoteASR, DeepgramASR, sse_objects
+from duplex_voice.providers.clients import (CompatibleLLM, ResponsesLLM, RemoteTTS, RemoteASR, DeepgramASR, OpenAIRealtimeASR,
+                                           OpenAITTS, sse_objects)
 from duplex_voice.speech_service import create_speech_app
 from duplex_voice.outbound import DialStore, dial
 
@@ -108,6 +110,128 @@ async def test_deepgram_missing_fence_fails_not_partial_success():
         port=server.sockets[0].getsockname()[1]
         asr=DeepgramASR(Settings(deepgram_api_key='test',deepgram_url=f'ws://127.0.0.1:{port}'))
         with pytest.raises(ExceptionGroup):await asr.recognize(audio_source(),lambda x:None)
+
+
+async def test_llm_reasoning_effort_is_opt_in():
+    captured=[]
+    def handle(request):captured.append(json.loads(request.content));return httpx.Response(200,content=b'data: [DONE]\n\n')
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        for effort in ('','none'):
+            async for _ in CompatibleLLM(Settings(llm_reasoning_effort=effort),client).stream([],'policy'):pass
+    assert 'reasoning_effort' not in captured[0] and captured[1]['reasoning_effort']=='none'
+
+
+def openai_server(events_after_commit,seen):
+    """Speaks the realtime transcription protocol: deltas before commit, final after it."""
+    async def handler(ws):
+        seen.append(ws.request.path);seen.append(ws.request.headers.get('Authorization'))
+        update=json.loads(await ws.recv());seen.append(update)
+        async for raw in ws:
+            msg=json.loads(raw)
+            if msg['type']=='input_audio_buffer.append':
+                seen.append(len(base64.b64decode(msg['audio'])))
+                await ws.send(json.dumps({'type':'conversation.item.input_audio_transcription.delta','item_id':'i1','delta':' Book'}))
+            elif msg['type']=='input_audio_buffer.commit':
+                await ws.send(json.dumps({'type':'input_audio_buffer.committed','item_id':'i1'}))
+                for event in events_after_commit:await ws.send(json.dumps(event))
+                await asyncio.sleep(.05);return
+    return handler
+
+
+async def test_openai_asr_commits_once_and_takes_only_the_committed_items_final():
+    seen=[];partials=[]
+    events=[{'type':'conversation.item.input_audio_transcription.completed','item_id':'other','transcript':'Wrong turn.'},
+            {'type':'conversation.item.input_audio_transcription.completed','item_id':'i1','transcript':' Book a table. '}]
+    async with websockets.serve(openai_server(events,seen),'127.0.0.1',0) as server:
+        port=server.sockets[0].getsockname()[1]
+        asr=OpenAIRealtimeASR(Settings(openai_api_key='test',openai_realtime_url=f'ws://127.0.0.1:{port}/v1/realtime'))
+        assert await asr.recognize(audio_source(),partials.append)=='Book a table.'
+    assert seen[0]=='/v1/realtime?intent=transcription' and seen[1]=='Bearer test'
+    session=seen[2]['session']['audio']['input']
+    assert session['turn_detection'] is None and session['format']=={'type':'audio/pcm','rate':24000}
+    assert session['transcription']=={'model':'gpt-live-transcribe','languages':['en']}
+    # 2 x 512 samples at 16 kHz become 1536 samples at 24 kHz (some held until flush).
+    assert sum(seen[3:])==1536*2 and partials[-1].startswith('Book')
+
+
+def test_openai_asr_session_fields_follow_the_model_family():
+    live=OpenAIRealtimeASR(Settings(openai_api_key='t',openai_asr_delay='minimal')).transcription()
+    assert live=={'model':'gpt-live-transcribe','languages':['en'],'delay':'minimal'}
+    legacy=OpenAIRealtimeASR(Settings(openai_api_key='t',openai_asr_model='gpt-4o-transcribe',openai_asr_delay='low')).transcription()
+    assert legacy=={'model':'gpt-4o-transcribe','language':'en'}   # rejects `languages`
+
+
+def sse(*events):
+    return BytesStream([b''.join(b'event: x\ndata: '+json.dumps(e).encode()+b'\n\n' for e in events)])
+
+
+async def responses_run(events,**kw):
+    captured=[];stream=sse(*events)
+    def handle(request):captured.append((str(request.url),json.loads(request.content)));return httpx.Response(200,stream=stream)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        llm=ResponsesLLM(Settings(llm_api='responses',llm_base_url='https://api.openai.com/v1',**kw),client)
+        out=[x async for x in llm.stream([{'role':'user','content':'Hi'},{'role':'assistant','content':'Hello.'}],'policy')]
+    return out,captured,stream
+
+
+async def test_responses_adapter_payload_and_text_deltas():
+    out,captured,stream=await responses_run([
+        {'type':'response.created'},{'type':'response.output_item.added','item':{'type':'message'}},
+        {'type':'response.output_text.delta','delta':'Tokyo'},{'type':'response.output_text.delta','delta':' it is.'},
+        {'type':'response.completed'}],llm_send_temperature=False,llm_reasoning_effort='none',llm_max_tokens=200)
+    assert ''.join(out)=='Tokyo it is.' and stream.closed
+    url,body=captured[0]
+    assert url=='https://api.openai.com/v1/responses' and body['store'] is False and body['instructions']=='policy'
+    assert body['input'][1]=={'role':'assistant','content':'Hello.'} and body['reasoning']=={'effort':'none'}
+    assert body['max_output_tokens']==200 and 'temperature' not in body
+
+
+@pytest.mark.parametrize('event',[{'type':'error'},{'type':'response.failed'},
+                                  {'type':'response.output_item.added','item':{'type':'function_call'}}])
+async def test_responses_adapter_fails_explicitly(event):
+    with pytest.raises(RuntimeError):
+        await responses_run([{'type':'response.output_text.delta','delta':'Partial'},event])
+
+
+async def test_openai_asr_provider_error_fails_the_utterance():
+    events=[{'type':'conversation.item.input_audio_transcription.failed','item_id':'i1'}]
+    async with websockets.serve(openai_server(events,[]),'127.0.0.1',0) as server:
+        port=server.sockets[0].getsockname()[1]
+        asr=OpenAIRealtimeASR(Settings(openai_api_key='test',openai_realtime_url=f'ws://127.0.0.1:{port}'))
+        with pytest.raises(ExceptionGroup):await asr.recognize(audio_source(),lambda x:None)
+
+
+async def test_openai_asr_close_without_final_is_not_partial_success():
+    async with websockets.serve(openai_server([],[]),'127.0.0.1',0) as server:
+        port=server.sockets[0].getsockname()[1]
+        asr=OpenAIRealtimeASR(Settings(openai_api_key='test',openai_realtime_url=f'ws://127.0.0.1:{port}'))
+        with pytest.raises(ExceptionGroup):await asr.recognize(audio_source(),lambda x:None)
+
+
+async def test_openai_tts_payload_odd_chunks_and_media_type():
+    b=float_to_pcm16(np.linspace(-.1,.1,53,dtype=np.float32));captured=[]
+    stream=BytesStream([b[i:i+7] for i in range(0,len(b),7)])
+    def handle(request):
+        captured.append((str(request.url),request.headers['authorization'],json.loads(request.content)))
+        return httpx.Response(200,headers={'Content-Type':'audio/pcm'},stream=stream)
+    s=Settings(openai_api_key='test',openai_tts_instructions='Calm.')
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        audio=np.concatenate([x async for x in OpenAITTS(s,client).synthesize('A phrase')])
+    assert float_to_pcm16(audio)==b and stream.closed
+    url,auth,body=captured[0]
+    assert url=='https://api.openai.com/v1/audio/speech' and auth=='Bearer test'
+    assert body=={'model':'gpt-4o-mini-tts','voice':'cedar','input':'A phrase','response_format':'pcm','instructions':'Calm.'}
+
+
+async def test_openai_tts_rejects_compressed_audio():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r:httpx.Response(200,headers={'Content-Type':'audio/mpeg'},content=b'ID3'))) as client:
+        with pytest.raises(ValueError):
+            async for _ in OpenAITTS(Settings(openai_api_key='test'),client).synthesize('Text'):pass
+
+
+def test_openai_providers_require_a_key():
+    with pytest.raises(ValueError):OpenAIRealtimeASR(Settings())
+    with pytest.raises(ValueError):OpenAITTS(Settings(),None)
 
 
 class FakeNative:

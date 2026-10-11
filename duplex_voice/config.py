@@ -33,7 +33,7 @@ class Settings(BaseModel):
     breaker_reset_seconds: float = Field(10, ge=.1, le=120)
     asr_base_url: str = ""
     tts_base_url: str = ""
-    voice_mode: Literal["demo", "local", "cloud"] = "demo"
+    voice_mode: Literal["demo", "local", "cloud", "live"] = "demo"
     deployment: Literal["development", "production"] = "development"
     app_token: str = ""
     signing_key: str = ""
@@ -47,6 +47,9 @@ class Settings(BaseModel):
     ingress_frames: int = Field(32, ge=4, le=128)
     asr_queue_frames: int = Field(64, ge=8, le=256)
     phrase_queue_size: int = Field(3, ge=1, le=8)
+    tts_lookahead: int = Field(1, ge=0, le=4)
+    tts_prebuffer_ms: int = Field(0, ge=0, le=3000)
+    tts_hedge_seconds: float = Field(0, ge=0, le=30)
     output_queue_frames: int = Field(20, ge=2, le=100)
     response_timeout: float = Field(60, ge=1, le=180)
     asr_timeout: float = Field(6, ge=0.1, le=30)
@@ -64,8 +67,8 @@ class Settings(BaseModel):
     vad_end_ms_phone: int = Field(640, ge=64, le=3000)
     barge_in_start_ms: int = Field(224, ge=32, le=1500)
     preroll_ms: int = Field(256, ge=32, le=1000)
-    asr_provider: Literal["speech", "deepgram"] = "speech"
-    tts_provider: Literal["speech", "elevenlabs"] = "speech"
+    asr_provider: Literal["speech", "deepgram", "openai"] = "speech"
+    tts_provider: Literal["speech", "elevenlabs", "openai"] = "speech"
     speech_base_url: str = "http://127.0.0.1:8001"
     speech_token: str = ""
     deepgram_api_key: str = ""
@@ -74,6 +77,19 @@ class Settings(BaseModel):
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""
     elevenlabs_model: str = "eleven_flash_v2_5"
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_realtime_url: str = "wss://api.openai.com/v1/realtime"
+    openai_asr_model: str = "gpt-live-transcribe"
+    openai_asr_delay: Literal["", "minimal", "low", "medium", "high", "xhigh"] = ""
+    openai_tts_model: str = "gpt-4o-mini-tts"
+    openai_tts_voice: str = Field("cedar", pattern=r"^[a-z0-9_-]{1,32}$")
+    openai_tts_instructions: str = Field("", max_length=1000)
+    live_url: str = "wss://api.openai.com/v1/live/sessions"
+    live_model: str = "gpt-live-1"
+    live_voice: str = Field("marin", pattern=r"^[a-z0-9_-]{1,32}$")
+    live_delegate_model: str = "gpt-5.6-luna"
+    live_greeting_retry_seconds: float = Field(6, ge=1, le=30)
     llm_base_url: str = "http://127.0.0.1:8002/v1"
     llm_api_key: str = ""
     llm_model: str = "voice-llm"
@@ -81,6 +97,8 @@ class Settings(BaseModel):
     llm_token_parameter: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
     llm_temperature: float = Field(0.4, ge=0, le=2)
     llm_send_temperature: bool = True
+    llm_api: Literal["chat", "responses"] = "chat"
+    llm_reasoning_effort: Literal["", "none", "minimal", "low", "medium", "high", "xhigh", "max"] = ""
     twilio_enabled: bool = False
     twilio_validate: bool = True
     twilio_auth_token: str = ""
@@ -111,6 +129,8 @@ class Settings(BaseModel):
             raise ValueError("PUBLIC_BASE_URL must be an HTTP(S) origin without a path")
         if u.query or u.fragment or u.username or u.password:
             raise ValueError("PUBLIC_BASE_URL must not contain credentials, query or fragment")
+        if self.voice_mode == "live" and not self.openai_api_key:
+            raise ValueError("VOICE_MODE=live requires OPENAI_API_KEY")
         if self.voice_mode != "demo" and self.vad_backend == "energy":
             raise ValueError("Energy VAD is permitted only in the explicitly labeled demo")
         if self.deployment == "production":
@@ -142,6 +162,8 @@ class Settings(BaseModel):
 
     @property
     def effective_vad(self) -> str:
+        if self.voice_mode == "live":
+            return "none"  # the live model detects speech itself
         if self.vad_backend != "auto":
             return self.vad_backend
         return "energy" if self.voice_mode == "demo" else "silero"

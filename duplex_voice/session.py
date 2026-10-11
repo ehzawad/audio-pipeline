@@ -5,6 +5,8 @@ isolated, pending text merges before first dispatch, and every output has an epo
 """
 from __future__ import annotations
 import asyncio
+import json
+import logging
 from contextlib import suppress, aclosing
 from dataclasses import dataclass
 import numpy as np
@@ -15,6 +17,15 @@ from .resilience import RateBudget
 from .metrics import Trace
 from .text import SentenceChunker, VOICE_SYSTEM_PROMPT, clean_for_tts
 from .turns import Start, End, TurnDetector
+
+log = logging.getLogger("duplex.session")
+
+
+def error_kinds(exc: BaseException) -> list[str]:
+    """Exception class names only: messages may quote provider responses or user text."""
+    if isinstance(exc, BaseExceptionGroup):
+        return sorted({k for e in exc.exceptions for k in error_kinds(e)})
+    return [type(exc).__name__]
 
 
 @dataclass
@@ -226,8 +237,10 @@ class VoiceSession:
                              (text, utterances), trace)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             # Failure is explicit. No replay of a partially spoken model reply.
+            log.warning(json.dumps({"type": "turn_failure", "transport": self.t.name,
+                                    "errors": error_kinds(exc)}, separators=(",", ":")))
             for u in utterances:
                 if u.task and not u.task.done():
                     u.task.cancel()
@@ -267,11 +280,17 @@ class VoiceSession:
                     await phrases.put(cleaned)
             await phrases.put(None)  # only on normal completion, never in finally
 
-        async def synthesize():
-            while (text := await phrases.get()) is not None:
-                rs = Resampler(tts.sample_rate, self.t.out_rate)
-                slicer = Packetizer(self.t.out_rate)
-                total = 0
+        # A hosted TTS may need seconds before its first byte. Requesting phrase N+1 only
+        # after phrase N is queued for playout turns that wait into audible silence, so up
+        # to TTS_LOOKAHEAD later phrases download while the current one plays.
+        slots = asyncio.Semaphore(self.s.tts_lookahead + 1)
+        ordered = asyncio.Queue()
+
+        async def fetch(text, chunks):
+            # Memory is bounded by the per-phrase audio budget. A failure waits in order,
+            # so complete earlier phrases still play before the response fails.
+            total = 0
+            try:
                 async with aclosing(tts.synthesize(text)) as stream:
                     async for samples in stream:
                         if not np.isfinite(samples).all() or samples.ndim != 1:
@@ -279,13 +298,36 @@ class VoiceSession:
                         total += len(samples)
                         if total > tts.sample_rate * 30:
                             raise ValueError("TTS exceeded per-phrase audio budget")
-                        for frame in slicer.push(rs.process(samples)):
-                            await packets.put(AudioPacket(frame))
+                        chunks.put_nowait(samples)
                 if not total:
                     raise ValueError("TTS returned no audio")
+                chunks.put_nowait(None)
+            except Exception as exc:
+                chunks.put_nowait(exc)
+
+        async def prefetch(tg):
+            while (text := await phrases.get()) is not None:
+                await slots.acquire()
+                chunks = asyncio.Queue()
+                ordered.put_nowait((text, chunks))
+                tg.create_task(fetch(text, chunks))
+            ordered.put_nowait(None)
+
+        async def synthesize():
+            while (item := await ordered.get()) is not None:
+                text, chunks = item
+                rs = Resampler(tts.sample_rate, self.t.out_rate)
+                slicer = Packetizer(self.t.out_rate)
+                while (samples := await chunks.get()) is not None:
+                    if isinstance(samples, Exception):
+                        await packets.put(samples)  # render raises after earlier audio
+                        return
+                    for frame in slicer.push(rs.process(samples)):
+                        await packets.put(AudioPacket(frame))
                 for frame in slicer.push(rs.flush()) + slicer.finish():
                     await packets.put(AudioPacket(frame))
                 await packets.put(AudioPacket(None, text))
+                slots.release()
             await packets.put(None)
 
         async def render():
@@ -295,6 +337,8 @@ class VoiceSession:
             while (packet := await packets.get()) is not None:
                 if epoch != self.ledger.epoch:
                     raise asyncio.CancelledError
+                if isinstance(packet, Exception):
+                    raise packet
                 if packet.samples is None:
                     self.ledger.phrase_sent(epoch, packet.text, self.ledger.sent)
                     await self.t.mark(epoch, self.ledger.sent)
@@ -326,6 +370,7 @@ class VoiceSession:
             async with asyncio.timeout(self.s.response_timeout):
                 async with asyncio.TaskGroup() as tg:
                     tg.create_task(produce_text())
+                    tg.create_task(prefetch(tg))
                     tg.create_task(synthesize())
                     tg.create_task(render())
                 await self.ledger.drain(epoch, self.s.playback_timeout)
